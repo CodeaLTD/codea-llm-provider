@@ -15,9 +15,21 @@ from .errors import (
     UnknownProviderError,
     UserCredentialUnavailableError,
 )
-from .interfaces import ClientAdapter, ProviderRegistry, ServerCredentials
+from .interfaces import ClientAdapter, ProviderRegistry, ServerCredentials, TelemetrySink
 from .registry import InMemoryProviderRegistry
 from .secret import Secret
+from .telemetry import (
+    CallCompleted,
+    CallFailed,
+    CallStarted,
+    CredentialFallback,
+    LLMEvent,
+    LoggingSink,
+    Telemetry,
+    UsageCollector,
+    event_name,
+    scrub,
+)
 from .types import (
     OMIT,
     CredentialUnavailable,
@@ -34,13 +46,19 @@ from .types import (
 
 __all__ = [
     "OMIT",
+    "CallCompleted",
+    "CallFailed",
+    "CallStarted",
     "ClientAdapter",
     "ConfigurationError",
+    "CredentialFallback",
     "CredentialNotApplicableError",
     "CredentialUnavailable",
     "InMemoryProviderRegistry",
+    "LLMEvent",
     "LLMProviderError",
     "LLMSelection",
+    "LoggingSink",
     "MappingServerCredentials",
     "MissingCredentialError",
     "ModelProfile",
@@ -53,8 +71,13 @@ __all__ = [
     "Secret",
     "ServerCredentials",
     "StoredCredential",
+    "Telemetry",
+    "TelemetrySink",
     "UnknownProviderError",
     "Usage",
+    "UsageCollector",
     "UserCredentialUnavailableError",
     "__version__",
+    "event_name",
+    "scrub",
 ]
