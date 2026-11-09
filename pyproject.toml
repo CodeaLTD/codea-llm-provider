@@ -1,0 +1,38 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "codea-llm-provider"
+dynamic = ["version"]
+description = "Framework-agnostic Python LLM library: picks the provider, model and key, makes one request work the same on frontier and local models, retries with Retry-After, fails over between providers, and reports every call."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+authors = [{ name = "Codea LTD" }]
+dependencies = []
+
+[project.optional-dependencies]
+crewai = ["crewai>=1.15,<2"]
+langchain = ["langchain-core>=1.7.6,<2"]
+dev = ["pytest>=8", "pytest-asyncio>=0.23"]
+
+[project.urls]
+Repository = "https://github.com/CodeaLTD/codea-llm-provider"
+
+[tool.hatch.version]
+path = "src/llm_provider/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/llm_provider"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+markers = [
+    "crewai: needs the crewai extra",
+    "langchain: needs the langchain extra",
+    "live: calls a real model server; runs only in live-smoke.yml",
+]

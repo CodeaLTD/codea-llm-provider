@@ -1,0 +1,14 @@
+.claude/
+docs/decision.md
+docs/plans/ 
+docs/reviews/
+docs/crewAI&CodeaLLMProvider.md
+docs/LangChain&CodeaLLMProvider.md
+
+# Python build and test artifacts
+__pycache__/
+*.egg-info/
+.pytest_cache/
+dist/
+build/
+.venv/
