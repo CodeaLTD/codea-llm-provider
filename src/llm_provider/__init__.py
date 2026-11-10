@@ -6,6 +6,7 @@ and are installed through extras.
 
 __version__ = "0.1.0.dev0"
 
+from .config import LLMProviderConfig
 from .credentials import MappingServerCredentials
 from .errors import (
     ConfigurationError,
@@ -18,6 +19,7 @@ from .errors import (
 from .interfaces import ClientAdapter, ProviderRegistry, ServerCredentials, TelemetrySink
 from .registry import InMemoryProviderRegistry
 from .secret import Secret
+from .service import LLMProviderService
 from .telemetry import (
     CallCompleted,
     CallFailed,
@@ -56,7 +58,9 @@ __all__ = [
     "CredentialUnavailable",
     "InMemoryProviderRegistry",
     "LLMEvent",
+    "LLMProviderConfig",
     "LLMProviderError",
+    "LLMProviderService",
     "LLMSelection",
     "LoggingSink",
     "MappingServerCredentials",
