@@ -11,7 +11,8 @@ from types import MappingProxyType
 from typing import Any
 
 from ..interfaces import TelemetrySink
-from ..types import Usage
+from ..types import ResolvedLLM, Usage
+from .calls import CallHandle, new_call_id
 from .events import CallCompleted, CallFailed, LLMEvent, event_name
 
 _WARN_EVERY = 100
@@ -48,6 +49,8 @@ class Telemetry:
       A sink that raises is counted in ``dropped_sink_errors`` and skipped.
     - ``scope(**attrs)`` tags the calls made inside the block; ``static_attrs`` tags them all.
     - ``collect()`` totals the usage of the calls that end inside the block.
+    - ``start_call`` and ``track_call`` report one model call: ``CallStarted``, then ``CallCompleted``
+      or ``CallFailed``.
     """
 
     def __init__(
@@ -83,7 +86,10 @@ class Telemetry:
 
     def emit(self, event: LLMEvent) -> None:
         """Give ``event`` to each sink in order. A sink that raises is counted and skipped."""
-        collector = self._collector.get()
+        self._emit_to(event, self._collector.get())
+
+    def _emit_to(self, event: LLMEvent, collector: UsageCollector | None) -> None:
+        """``emit`` for a call that captured its collector at its start, so it can end on any thread."""
         if collector is not None:
             if isinstance(event, CallCompleted):
                 collector.record(event.usage or Usage())
@@ -117,6 +123,39 @@ class Telemetry:
             yield collector
         finally:
             self._collector.reset(token)
+
+    def start_call(self, resolved: ResolvedLLM, *, call_id: str | None = None, **attrs: Any) -> CallHandle:
+        """Report ``CallStarted`` and return the handle that ends the call.
+
+        The attrs (this hub's, the active scope's, then ``attrs``), the active ``collect()`` block
+        and the live key are captured now, so ``complete`` or ``fail`` can run on another thread or
+        context and the event is still attributed correctly.
+        """
+        handle = CallHandle(
+            self,
+            resolved,
+            call_id=call_id or new_call_id(),
+            attrs=MappingProxyType(self.current_attrs(**attrs)),
+            collector=self._collector.get(),
+        )
+        handle._emit_started()
+        return handle
+
+    @contextmanager
+    def track_call(self, resolved: ResolvedLLM, **attrs: Any) -> Iterator[CallHandle]:
+        """Report the call made inside the block. Set ``call.usage`` and ``call.finish_reason`` as the reply arrives.
+
+        A normal exit reports ``CallCompleted``. Any ``BaseException`` (``CancelledError`` and
+        ``TimeoutError`` included) reports ``CallFailed`` and is raised again; a ``usage`` set
+        before the raise still counts.
+        """
+        call = self.start_call(resolved, **attrs)
+        try:
+            yield call
+        except BaseException as error:
+            call.fail(error)
+            raise
+        call.complete(call.usage, call.finish_reason)
 
     def _sink_failed(self, sink: TelemetrySink, event: LLMEvent, exc: Exception) -> None:
         with self._lock:
