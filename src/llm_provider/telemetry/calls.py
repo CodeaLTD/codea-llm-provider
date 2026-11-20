@@ -13,9 +13,9 @@ import uuid
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
+from ..resilience.classify import classify_error
 from ..types import ResolvedLLM, Usage
 from .events import CallCompleted, CallFailed, CallStarted
-from .scrub import scrub
 
 if TYPE_CHECKING:
     from ..secret import Secret
@@ -79,10 +79,15 @@ class CallHandle:
         )
 
     def fail(self, error: BaseException) -> None:
-        """Report the call as failed, with the error's type and its scrubbed message."""
+        """Report the call as failed: the error's type, its kind, status and code, and a safe message.
+
+        The message is the provider's text, scrubbed, except for ``bad_request``, ``unknown`` and
+        ``context_overflow``, whose text is withheld (Decision 20): see ``classify_error``.
+        """
         if not self._finish():
             return
         secrets = (self._key.reveal(),) if self._key is not None else ()
+        info = classify_error(error, secrets=secrets)
         self._telemetry._emit_to(
             CallFailed(
                 provider=self._provider,
@@ -92,7 +97,10 @@ class CallHandle:
                 origin=self._origin,
                 latency_ms=self._elapsed_seconds() * 1000.0,
                 error_type=type(error).__name__,
-                error_message=scrub(str(error), secrets),
+                error_message=info.message,
+                error_kind=info.kind.value,
+                status_code=info.status_code,
+                error_code=info.error_code,
                 usage=self.usage,
             ),
             self._collector,

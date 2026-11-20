@@ -56,7 +56,7 @@ class CallFailed(_Event):
     latency_ms: float
     error_type: str
     error_message: str  # scrubbed
-    error_kind: str | None = None  # filled when failures are classified (plan 07)
+    error_kind: str | None = None  # an ErrorKind value; set by CallHandle.fail since plan 07
     status_code: int | None = None
     error_code: str | None = None
     usage: Usage | None = None  # set when the provider answered but the reply was rejected

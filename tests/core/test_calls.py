@@ -26,6 +26,16 @@ from llm_provider.testing import StubLLMServer
 LIVE_KEY = "live-key-for-the-test-0042"  # none of scrub's own patterns match it
 
 
+class Overloaded(Exception):
+    """A provider failure whose text is kept: its status makes it ``overloaded`` (a plain error is ``unknown``)."""
+
+    status_code = 503
+
+
+class AuthRejected(Exception):
+    status_code = 401
+
+
 def resolve(rig: Rig, provider: str = "openai", *, key: str = LIVE_KEY, base_url: str | None = None) -> ResolvedLLM:
     selection = rig.service.select(provider, base_url=base_url)
     return rig.service.resolve(selection, user_credential=StoredCredential(Secret(key)))
@@ -74,16 +84,16 @@ def test_track_call_reports_an_exception_as_call_failed_and_reraises(build: Buil
     rig = build()
     resolved = resolve(rig)
 
-    with pytest.raises(ValueError, match="boom"), rig.telemetry.track_call(resolved):
-        raise ValueError("boom")
+    with pytest.raises(Overloaded, match="boom"), rig.telemetry.track_call(resolved):
+        raise Overloaded("boom")
 
     started, failed = rig.sink.events
     assert isinstance(started, CallStarted)
     assert isinstance(failed, CallFailed)
-    assert failed.error_type == "ValueError"
+    assert failed.error_type == "Overloaded"
     assert failed.error_message == "boom"
     assert failed.call_id == started.call_id
-    assert (failed.error_kind, failed.status_code, failed.error_code, failed.usage) == (None, None, None, None)
+    assert (failed.error_kind, failed.status_code, failed.error_code, failed.usage) == ("overloaded", 503, None, None)
 
 
 async def test_track_call_reports_timeout_and_cancellation(build: BuildRig) -> None:
@@ -147,10 +157,10 @@ def test_second_complete_or_fail_is_a_no_op(build: BuildRig) -> None:
     first = rig.telemetry.start_call(resolved)
     first.complete(Usage(1, 1, 2))
     first.complete(Usage(9, 9, 18))
-    first.fail(RuntimeError("late"))
+    first.fail(Overloaded("late"))
     second = rig.telemetry.start_call(resolved)
-    second.fail(RuntimeError("first"))
-    second.fail(RuntimeError("second"))
+    second.fail(Overloaded("first"))
+    second.fail(Overloaded("second"))
     second.complete()
 
     assert [e.usage for e in events_of(rig, CallCompleted)] == [Usage(1, 1, 2)]
@@ -221,7 +231,7 @@ def test_pending_calls_pair_by_key_and_count_unknown_ends(build: BuildRig) -> No
     pending.start("a", resolved, stage="one")
     pending.start("b", resolved)
     assert pending.complete("a", Usage(1, 2, 3), "stop") is True
-    assert pending.fail("b", RuntimeError("nope")) is True
+    assert pending.fail("b", Overloaded("nope")) is True
     assert pending.unmatched == 0
     assert pending.complete("a") is False  # already ended
     assert pending.fail("never-started", RuntimeError("x")) is False
@@ -284,12 +294,12 @@ def test_failed_call_message_is_scrubbed_of_the_live_key(build: BuildRig) -> Non
     resolved = resolve(rig)
     pending = PendingCalls(rig.telemetry)
 
-    with pytest.raises(RuntimeError), rig.telemetry.track_call(resolved):
-        raise RuntimeError(f"401: bad key {LIVE_KEY}")
+    with pytest.raises(AuthRejected), rig.telemetry.track_call(resolved):
+        raise AuthRejected(f"401: bad key {LIVE_KEY}")
     pending.start("p", resolved)
-    pending.fail("p", RuntimeError(f"401: bad key {LIVE_KEY}"))
+    pending.fail("p", AuthRejected(f"401: bad key {LIVE_KEY}"))
     handle = rig.telemetry.start_call(resolved)
-    handle.fail(RuntimeError(f"401: bad key {LIVE_KEY}"))
+    handle.fail(AuthRejected(f"401: bad key {LIVE_KEY}"))
 
     messages = [e.error_message for e in events_of(rig, CallFailed)]
     assert len(messages) == 3
@@ -303,9 +313,10 @@ def test_a_handle_keeps_the_live_key_wrapped_while_the_call_is_open(build: Build
 
     # A debugger or an error reporter that walks the handle's attributes must see no key.
     assert LIVE_KEY not in repr(vars(handle))
-    handle.fail(RuntimeError(f"401: bad key {LIVE_KEY}"))
+    handle.fail(AuthRejected(f"401: bad key {LIVE_KEY}"))
     assert LIVE_KEY not in repr(vars(handle))
     (failed,) = events_of(rig, CallFailed)
+    assert "401: bad key" in failed.error_message  # an auth error keeps its text, so the scrub is what hides the key
     assert LIVE_KEY not in failed.error_message
 
 
@@ -314,7 +325,7 @@ def test_a_call_with_no_key_has_nothing_to_scrub(build: BuildRig) -> None:
     resolved = rig.service.resolve(rig.service.select("ollama"))  # no key at all: origin "none"
     assert resolved.api_key is None
 
-    with pytest.raises(ValueError), rig.telemetry.track_call(resolved):
-        raise ValueError("plain text")
+    with pytest.raises(Overloaded), rig.telemetry.track_call(resolved):
+        raise Overloaded("plain text")
 
     assert [e.error_message for e in events_of(rig, CallFailed)] == ["plain text"]
