@@ -135,6 +135,15 @@ _GEMINI_STATUSES = {
     503: "UNAVAILABLE",
 }
 _AUTH_HEADERS = ("authorization", "x-api-key", "api-key", "x-goog-api-key")
+_GEMINI_DAILY_QUOTA_DETAIL = {
+    "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+    "violations": [
+        {
+            "quotaMetric": "generativelanguage.googleapis.com/generate_content_requests",
+            "quotaId": "GenerateRequestsPerDayPerProjectPerModel-FreeTier",
+        }
+    ],
+}
 
 
 def _error_body(vendor: str, status: int, kind: str, code: str | None, message: str) -> dict[str, Any]:
@@ -150,7 +159,11 @@ def _vendor_failure(kind: str, vendor: str) -> StubReply:
     if vendor not in _VENDORS:
         raise ValueError(f"vendor must be one of {_VENDORS}, got {vendor!r}")
     status, error_kind, code, message = _FAILURES[kind][vendor]
-    return StubReply(status=status, body=_error_body(vendor, status, error_kind, code, message))
+    body = _error_body(vendor, status, error_kind, code, message)
+    if kind == "quota_exhausted" and vendor == "gemini":
+        # Gemini sends one 429 for a per-minute limit and for a daily quota; only this detail tells them apart.
+        body["error"]["details"] = [_GEMINI_DAILY_QUOTA_DETAIL]
+    return StubReply(status=status, body=body)
 
 
 def _openai_chunk(model: str, **fields: Any) -> dict[str, Any]:
